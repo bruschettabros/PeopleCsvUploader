@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Collections\PersonCollection;
 use App\Models\Person;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class PersonParserService
 {
     private const PERSON_GLUE = ' and ';
+    private const MORE_PERSON_GLUE = ' & ';
     private const SEPARATOR = ' ';
 
     // This should be refactored to a config, Probably database
@@ -18,6 +20,7 @@ class PersonParserService
         'Ms',
         'Dr',
         'Prof',
+        'Mister',
     ];
 
     private const INITIAL_SUFFIX = '.';
@@ -31,12 +34,17 @@ class PersonParserService
     public function __construct(string $person)
     {
         $this->personCollection = new PersonCollection;
-        $this->extractNames($person);
-        $this->extractTitle();
-        $this->extractLastName();
-        $this->extractInitial();
-        $this->extractFirstName();
+        $this->splitNames($person);
 
+        if ($this->hasSecondPerson) {
+            $this->extractTitle($this->secondPerson)
+                ->extractName($this->secondPerson, 'last_name')
+                ->extractName($this->secondPerson);
+        }
+        $this->extractTitle($this->person)
+            ->extractInitial()
+            ->extractName($this->person, 'last_name', $this->secondPerson['processed']['last_name'] ?? null)
+            ->extractName($this->person, 'first_name', $this->secondPerson['processed']['first_name'] ?? null);
     }
 
     public static function init(string $person): self
@@ -46,7 +54,6 @@ class PersonParserService
 
     public function save(): PersonCollection
     {
-
         $toSave = collect([$this->person]);
         if ($this->hasSecondPerson) {
             $toSave = $toSave->add($this->secondPerson);
@@ -66,9 +73,23 @@ class PersonParserService
 
     }
 
-    private function extractNames(string $person): void
+    private function deGlue(string $person): Collection
     {
+        Str::of($person);
         $names = Str::of($person)->explode(self::PERSON_GLUE);
+
+        if ($names->count() === 1) {
+            $names = Str::of($person)->explode(self::MORE_PERSON_GLUE);
+        }
+
+        return $names;
+
+    }
+
+    private function splitNames(string $person): void
+    {
+        $names = $this->deGlue($person);
+
         if ($names->count() > 1) {
             $this->hasSecondPerson = true;
             $this->secondPerson['raw'] = $this->explodePerson($names->pop());
@@ -82,54 +103,43 @@ class PersonParserService
         return Str::of($person)->explode(self::SEPARATOR)->toArray();
     }
 
-    private function extractTitle(): void
+    private function extractTitle(array &$person): self
     {
-        $potentialTitle = Str::of($this->person['raw'][0]);
-        if ($potentialTitle->contains(self::ACCEPTABLE_TITLES)) {
-            $this->person['processed']['title'] = $this->person['raw'][0] ?? null;
+        $potentialTitle = Str::of(($person['raw'][0]) ?? '');
+
+        if ($potentialTitle->ucfirst()->contains(self::ACCEPTABLE_TITLES)) {
+            $person['processed']['title'] = $person['raw'][0] ?? null;
+            unset($person['raw'][0]);
         }
 
-        if ($this->hasSecondPerson) {
-            $potentialTitle = Str::of($this->secondPerson['raw'][0]);
-            if ($potentialTitle->contains(self::ACCEPTABLE_TITLES)) {
-                $this->secondPerson['processed']['title'] = $this->secondPerson['raw'][0] ?? null;
-            }
-        }
+        return $this;
     }
 
-    private function extractLastName(): void
+    private function extractName(array &$person, string $field = 'first_name', ?string $fallbackName = null)
     {
-        if ($this->hasSecondPerson) {
-            $this->person['processed']['last_name'] = $this->secondPerson['processed']['last_name'] = end($this->secondPerson['raw']);
+        $potentialName = end($person['raw']);
+
+        if ($potentialName !== false) {
+            $person['processed'][$field] = $potentialName;
+            array_pop($person['raw']);
         } else {
-            $this->person['processed']['last_name'] = end($this->person['raw']);
-        }
-    }
-
-    private function extractFirstName(): void
-    {
-        $offset = $this->hasTitle() ? 1 : 0;
-        $name = Str::of(($this->person['raw'][$offset]) ?? null)->replace(self::INITIAL_SUFFIX, '');
-        if ((string) $name === ($this->person['processed']['initial'] ?? null)) {
-            $name = null;
+            $person['processed'][$field] = $fallbackName;
         }
 
-        $this->person['processed']['first_name'] = (string) $name;
+        return $this;
     }
 
-    private function hasTitle(): bool
+    private function extractInitial(): self
     {
-        return isset($this->person['processed']['title']);
-    }
-
-    private function extractInitial(): void
-    {
-        collect($this->person['raw'])->each(function ($part) {
+        collect($this->person['raw'])->each(function ($part, $key) {
             $string = Str::of($part)->replace(self::INITIAL_SUFFIX, '');
 
             if ($string->length() === 1) {
                 $this->person['processed']['initial'] = (string) $string;
+                unset($this->person['raw'][$key]);
             }
         });
+
+        return $this;
     }
 }

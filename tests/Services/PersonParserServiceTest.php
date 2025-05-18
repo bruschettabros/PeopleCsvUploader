@@ -6,6 +6,7 @@ use App\Services\PersonParserService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Iterator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PersonParserServiceTest extends TestCase
@@ -26,7 +27,6 @@ class PersonParserServiceTest extends TestCase
                     'initial' => null,
                 ],
             ],
-            'string' => 'Mr. John Smith',
         ];
         yield 'Mr And Mrs Smith' => [
             'input' => 'Mr and Mrs Smith',
@@ -44,7 +44,6 @@ class PersonParserServiceTest extends TestCase
                     'initial' => null,
                 ],
             ],
-            'string' => 'Mr. and Mrs. Smith',
         ];
         yield 'Mr J. Smith' => [
             'input' => 'Mr J. Smith',
@@ -56,16 +55,48 @@ class PersonParserServiceTest extends TestCase
                     'initial' => 'J',
                 ],
             ],
-            'string' => 'Mr. J. Smith',
+        ];
+        yield 'Dr & Mrs Joe Bloggs' => [
+            'input' => 'Dr & Mrs Joe Bloggs',
+            'array' => [
+                0 => [
+                    'title' => 'Dr',
+                    'first_name' => 'Joe',
+                    'last_name' => 'Bloggs',
+                    'initial' => null,
+                ],
+                1 => [
+                    'title' => 'Mrs',
+                    'first_name' => 'Joe',
+                    'last_name' => 'Bloggs',
+                    'initial' => null,
+                ],
+            ],
+        ];
+        yield 'Mr Tom Staff and Mr John Doe' => [
+            'input' => 'Mr Tom Staff and Mr John Doe',
+            'array' => [
+                0 => [
+                    'title' => 'Mr',
+                    'first_name' => 'Tom',
+                    'last_name' => 'Staff',
+                    'initial' => null,
+                ],
+                1 => [
+                    'title' => 'Mr',
+                    'first_name' => 'John',
+                    'last_name' => 'Doe',
+                    'initial' => null,
+                ],
+            ],
         ];
     }
 
     /**
-     * @dataProvider PersonParserService
-     *
      * @test
      */
-    public function person_parser_service(string $input, array $array, string $string): void
+    #[DataProvider('PersonParserService')]
+    public function person_parser_serv(string $input, array $array): void
     {
         $collection = PersonParserService::init($input)->save();
         $testArray = [];
